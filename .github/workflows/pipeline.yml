@@ -105,6 +105,7 @@ jobs:
       - name: Build and push Docker image
         run: |
           IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
           docker build -t $IMAGE_NAME:${{ github.sha }} .
           docker push $IMAGE_NAME:${{ github.sha }}
 
@@ -130,15 +131,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set image name
-        run: echo "IMAGE_NAME=$(echo 'ghcr.io/${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
       - name: Pull image
         run: docker pull $IMAGE_NAME:${{ github.sha }}
 
       - name: Tag and push to Heroku
         run: |
-          docker tag ghcr.io/$IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          docker tag $IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
           echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
           docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
 
@@ -164,11 +162,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        run: docker pull ghcr.io/$IMAGE_NAME:${{ github.sha }}
+        run: docker pull $IMAGE_NAME:${{ github.sha }}
 
       - name: Tag and push to Heroku
         run: |
-          docker tag ghcr.io/$IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          docker tag $IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
           echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
           docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
 
