@@ -1,0 +1,167 @@
+# .github/workflows/ci-cd.yml
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          restore-keys: ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+  test:
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          restore-keys: ${{ runner.os }}-node-
+
+      - name: Run tests with coverage
+        run: npm test -- --coverage --coverageReporters=text-lcov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  securite:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          path: node_modules
+          restore-keys: ${{ runner.os }}-node-
+
+      - name: Run lint (SAST simple)
+        run: npm run lint || true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: securite
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+          if [ "${{ github.ref }}" = "refs/heads/develop" ] || [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
+            docker push ghcr.io/${{ github.repository }}:latest
+          fi
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    env:
+      HEROKU_APP: ${{ vars.HEROKU_APP_STAGING }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Tag and push to Heroku
+        run: |
+          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
+          docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
+
+      - name: Smoke test
+        run: curl --fail "https://${{ env.HEROKU_APP }}.herokuapp.com/health" || exit 1
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    if: github.ref == 'refs/heads/main'
+    env:
+      HEROKU_APP: ${{ vars.HEROKU_APP_PROD }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Tag and push to Heroku
+        run: |
+          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
+          docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
+
+      - name: Smoke test
+        run: curl --fail "https://${{ env.HEROKU_APP }}.herokuapp.com/health" || exit 1
