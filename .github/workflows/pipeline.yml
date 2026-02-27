@@ -138,7 +138,7 @@ jobs:
 
       - name: Tag and push to Heroku
         run: |
-          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          docker tag ghcr.io/$IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
           echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
           docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
 
@@ -164,11 +164,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        run: docker pull ghcr.io/${{ github.repository }}:${{ github.sha }}
+        run: docker pull ghcr.io/$IMAGE_NAME:${{ github.sha }}
 
       - name: Tag and push to Heroku
         run: |
-          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
+          docker tag ghcr.io/$IMAGE_NAME:${{ github.sha }} registry.heroku.com/${{ env.HEROKU_APP }}/web
           echo "${{ secrets.HEROKU_API_KEY }}" | docker login registry.heroku.com --username _ --password-stdin
           docker push registry.heroku.com/${{ env.HEROKU_APP }}/web
 
