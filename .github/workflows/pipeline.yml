@@ -133,9 +133,7 @@ jobs:
 
       - name: Deploy to Railway
         run: |
-          railway up \
-            --service $RAILWAY_SERVICE_ID \
-            --message "Automatic deployement: ${{ github.sha }}"
+          railway redeploy -s $RAILWAY_SERVICE_ID -y
 
       - name: Smoke test
         run: curl --fail "https://${RAILWAY_DOMAIN}/health"
@@ -156,9 +154,7 @@ jobs:
 
       - name: Deploy to Railway
         run: |
-          railway up \
-            --service $RAILWAY_SERVICE_ID \
-            --message "Automatic deployement: ${{ github.sha }}"
+          railway redeploy -s $RAILWAY_SERVICE_ID -y
 
       - name: Smoke test
         run: curl --fail "https://${RAILWAY_DOMAIN}/health"
