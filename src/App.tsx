@@ -24,7 +24,7 @@ function App() {
         <p>SUPER IMPORTANT A AFFICHER !!!!!!</p>
       </div>
       <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
+        Les tests sont à venir !
       </p>
     </>
   )
