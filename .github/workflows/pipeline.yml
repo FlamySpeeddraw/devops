@@ -1,45 +1,57 @@
-# .github/workflows/ci-cd.yml
-
+# Nom du workflow affiché dans l'onglet Actions GitHub
 name: CI/CD Pipeline
 
+# Permissions nécessaires au workflow
 permissions:
-  contents: read
-  packages: write
+  contents: read       # autorise la lecture du dépôt
+  packages: write      # autorise le push d’images Docker sur GitHub Registry
 
+# Déclencheurs du pipeline
 on:
   push:
     branches:
-      - develop
-      - main
+      - develop        # pipeline lancé si push sur develop
+      - main           # pipeline lancé si push sur main
   pull_request:
     branches:
-      - develop
+      - develop        # pipeline lancé si PR vers develop
 
 jobs:
+
+  # =========================
+  # JOB 1 — INSTALLATION
+  # =========================
   install:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest   # machine virtuelle Linux fournie par GitHub
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4   # récupère le code du dépôt
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 20          # installe Node.js version 20
 
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
+          # clé unique basée sur le package-lock.json
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          path: node_modules
-          restore-keys: ${{ runner.os }}-node-
+          path: node_modules        # dossier mis en cache
+          restore-keys: ${{ runner.os }}-node-  # fallback si clé exacte absente
 
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
+        # npm ci = installation propre et rapide (CI friendly)
+        # --prefer-offline = utilise le cache si possible
+        # --no-audit = évite la vérification sécurité npm (plus rapide)
 
+  # =========================
+  # JOB 2 — TESTS
+  # =========================
   test:
     runs-on: ubuntu-latest
-    needs: install
+    needs: install   # ce job attend la fin du job install
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,16 +70,20 @@ jobs:
 
       - name: Run tests with coverage
         run: npm test -- --coverage --coverageReporters=text-lcov
+        # lance les tests + génère un rapport de couverture
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
-        if: always()
+        if: always()   # upload même si les tests échouent
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # =========================
+  # JOB 3 — SECURITE / LINT
+  # =========================
   securite:
     runs-on: ubuntu-latest
-    needs: test
+    needs: test   # attend que les tests soient terminés
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -86,14 +102,21 @@ jobs:
 
       - name: Run lint (SAST simple)
         run: npm run lint
+        # analyse statique du code (qualité + sécurité basique)
 
+  # =========================
+  # JOB 4 — BUILD DOCKER
+  # =========================
   build:
     runs-on: ubuntu-latest
     needs: securite
+
+    # build seulement sur develop ou main
     if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
-    
+
     outputs:
       image_name: ${{ steps.build_image.outputs.image_name }}
+      # permet de réutiliser le nom de l'image dans les jobs suivants
 
     steps:
       - name: Checkout code
@@ -109,19 +132,25 @@ jobs:
       - name: Build and push Docker image
         id: build_image
         run: |
+          # nom de l’image Docker (en minuscule obligatoire)
           IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
 
+          # build image avec tag = SHA du commit
           docker build -t $IMAGE_NAME:${{ github.sha }} .
           docker push $IMAGE_NAME:${{ github.sha }}
 
+          # tag latest pour déploiement simple
           docker tag $IMAGE_NAME:${{ github.sha }} $IMAGE_NAME:latest
           docker push $IMAGE_NAME:latest
 
+  # =========================
+  # JOB 5 — DEPLOY STAGING
+  # =========================
   deploy-staging:
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/develop'   # uniquement sur develop
     env:
       IMAGE_NAME: ${{ needs.build.outputs.image_name }}
       RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID_STAGING }}
@@ -134,14 +163,19 @@ jobs:
       - name: Deploy to Railway
         run: |
           railway redeploy -s $RAILWAY_SERVICE_ID -y
+          # redéploie le service staging
 
       - name: Smoke test
         run: curl --fail "https://${RAILWAY_DOMAIN}/health"
+        # vérifie que l’application répond après déploiement
 
+  # =========================
+  # JOB 6 — DEPLOY PROD
+  # =========================
   deploy-prod:
     runs-on: ubuntu-latest
     needs: build
-    environment: production
+    environment: production   # permet validation manuelle si configuré
     if: github.ref == 'refs/heads/main'
     env:
       IMAGE_NAME: ${{ needs.build.outputs.image_name }}
@@ -155,6 +189,8 @@ jobs:
       - name: Deploy to Railway
         run: |
           railway redeploy -s $RAILWAY_SERVICE_ID -y
+          # redéploiement en production
 
       - name: Smoke test
         run: curl --fail "https://${RAILWAY_DOMAIN}/health"
+        # test rapide pour vérifier que la prod fonctionne
